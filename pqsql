@@ -1,1 +1,68 @@
-pqsql
+navicat ver 12.0
+CREATE TABLE peid as
+WITH idd as(
+SELECT DISTINCT patientunitstayid
+FROM treatment
+where treatmentstring like 'pulmonary|ventilation and oxygenation%')
+SELECT DISTINCT diagnosis.patientunitstayid,unitdischargeoffset,gender,
+CASE WHEN unitdischargelocation IN ('Death') THEN 1
+ELSE 0 end as statuss,
+CASE WHEN age like '> 89' then '92' ELSE age end as age
+FROM "diagnosis",patient,idd
+WHERE diagnosisstring ~* '.*pulmonary embolism.*' AND diagnosispriority IN('Primary','Major') AND patient.patientunitstayid=diagnosis.patientunitstayid AND unitdischargeoffset/60/24 >=1 AND idd.patientunitstayid=diagnosis.patientunitstayid
+
+
+
+
+
+SELECT peid.*, pivoted_vital.chartoffset,pivoted_vital.spo2,apache4.apache4score,apache4vent.intubatedday1,apache4vent.ventday1,apache4.actualhospitallos
+FROM "pivoted_vital",peid,apache4,apache4vent
+WHERE pivoted_vital.patientunitstayid=peid.patientunitstayid AND pivoted_vital.spo2 is NOT NULL AND apache4.patientunitstayid=peid.patientunitstayid AND peid.patientunitstayid=apache4vent.patientunitstayid
+ORDER BY peid.patientunitstayid,chartoffset
+
+
+
+WITH idd as(
+SELECT patientunitstayid, CASE WHEN spo2<97  THEN 1 ELSE NULL end as sposcore96,CASE WHEN spo2>=97 AND spo2<=99  then 1 ELSE NULL  end as sposcore98,CASE WHEN spo2>99 THEN 1 ELSE 0 END AS sposcore100
+FROM "pe"),iddd as(
+SELECT patientunitstayid ,count(sposcore96) as low ,count(sposcore98) as good,count(sposcore100) as moree
+FROM idd
+GROUP BY patientunitstayid)
+SELECT pe.*,iddd.low,iddd.good,iddd.moree
+FROM pe,iddd
+WHERE pe.patientunitstayid=iddd.patientunitstayid
+ORDER BY patientunitstayid
+
+
+
+WITH idd as(
+SELECT patientunitstayid, CASE WHEN spo2<97  THEN 1 ELSE NULL end as sposcore96,CASE WHEN spo2>=97 AND spo2<=99  then 1 ELSE NULL  end as sposcore98,CASE WHEN spo2>99 THEN 1 ELSE 0 END AS sposcore100
+FROM "pe"),iddd as(
+SELECT patientunitstayid ,count(sposcore96) as low ,count(sposcore98) as good,count(sposcore100) as moree
+FROM idd
+GROUP BY patientunitstayid),idddd as(
+SELECT patientunitstayid, round(low::numeric/(low+good+moree)::numeric,2) as c1, round(good::numeric/(low+good+moree)::numeric ,2) as c2, round(moree::numeric/(low+good+moree)::numeric ,2) as c3   
+FROM iddd)
+SELECT pe.*,idddd.c1,idddd.c2,idddd.c3
+FROM pe,idddd
+WHERE pe.patientunitstayid=idddd.patientunitstayid
+ORDER BY patientunitstayid
+
+
+
+WITH idd as(
+SELECT DISTINCT peid3.patientunitstayid,CASE WHEN peid3.patientunitstayid=peanticoagulantid.patientunitstayid THEN 1 ELSE 0 END as ant
+FROM peid3,peanticoagulantid
+ORDER BY patientunitstayid),ant as(
+SELECT patientunitstayid,max(ant) as ant
+FROM idd
+GROUP BY  patientunitstayid),iddd as(
+SELECT DISTINCT peid3.patientunitstayid,CASE WHEN peid3.patientunitstayid=pethrombolyticid.patientunitstayid THEN 1 ELSE 0 END as thr
+FROM peid3,pethrombolyticid
+ORDER BY patientunitstayid),thr as(
+SELECT patientunitstayid,max(thr) as thr
+FROM iddd
+GROUP BY  patientunitstayid)
+SELECT peid3.*,ant.ant,thr.thr
+FROM peid3,ant,thr
+WHERE peid3.patientunitstayid=ant.patientunitstayid AND peid3.patientunitstayid=thr.patientunitstayid
